@@ -200,20 +200,54 @@ class InstagramUnfollowBot:
             
             # Instagram exports have different structures
             if isinstance(data, list):
-                return data
-            elif isinstance(data, dict):
-                # Try common keys
-                if "relationships_followers" in data:
-                    return data["relationships_followers"]
-                elif "relationships_following" in data:
-                    return data["relationships_following"]
-                elif isinstance(data.get("list"), list):
-                    return data["list"]
+                # Direct list format
+                if len(data) > 0 and isinstance(data[0], dict):
+                    return data
                 else:
-                    # Return first list-like value found
-                    for value in data.values():
-                        if isinstance(value, list):
+                    # List of strings or other types - try to extract
+                    result = []
+                    for item in data:
+                        if isinstance(item, dict):
+                            result.append(item)
+                    return result
+            elif isinstance(data, dict):
+                # Try common Instagram export keys
+                possible_keys = [
+                    "relationships_followers",
+                    "relationships_following",
+                    "following",
+                    "followers",
+                    "list",
+                    "data",
+                ]
+                
+                for key in possible_keys:
+                    if key in data and isinstance(data[key], list):
+                        return data[key]
+                
+                # Check nested structures
+                if "relationships_followers" in data:
+                    nested = data["relationships_followers"]
+                    if isinstance(nested, list):
+                        return nested
+                
+                if "relationships_following" in data:
+                    nested = data["relationships_following"]
+                    if isinstance(nested, list):
+                        return nested
+                
+                # Return first list-like value found in dict
+                for key, value in data.items():
+                    if isinstance(value, list) and len(value) > 0:
+                        # Verify it contains dicts (likely Instagram data)
+                        if isinstance(value[0], dict):
                             return value
+                
+                # If we have a single dict, wrap it in a list
+                if isinstance(data, dict) and len(data) > 0:
+                    # Last resort: return the dict itself wrapped
+                    return [data]
+            
             return []
         except FileNotFoundError:
             print(f"✗ Error: {filename} not found")
@@ -221,20 +255,84 @@ class InstagramUnfollowBot:
         except json.JSONDecodeError as e:
             print(f"✗ Error parsing {filename}: {e}")
             return []
+        except Exception as e:
+            print(f"✗ Unexpected error parsing {filename}: {e}")
+            return []
 
     def extract_usernames(self, data: List[dict]) -> Set[str]:
         """Extract usernames from Instagram JSON data."""
         usernames = set()
         
+        if not data:
+            return usernames
+        
+        # Debug: print structure of first item to understand format
+        if len(data) > 0:
+            sample = data[0]
+            if isinstance(sample, dict):
+                # Print keys to help debug (only for first run)
+                pass  # Commented out to avoid clutter, uncomment if needed for debugging
+        
         for item in data:
-            if isinstance(item, dict):
-                # Try different possible keys
+            if not isinstance(item, dict):
+                continue
+            
+            username = None
+            
+            # Method 1: string_list_data structure (most common in Instagram exports)
+            if "string_list_data" in item:
+                string_list = item["string_list_data"]
+                if isinstance(string_list, list) and len(string_list) > 0:
+                    first_item = string_list[0]
+                    if isinstance(first_item, dict):
+                        username = first_item.get("value") or first_item.get("href", "").split("/")[-1].rstrip("/")
+            
+            # Method 2: Direct value/username fields
+            if not username:
                 username = (
-                    item.get("string_list_data", [{}])[0].get("value") if isinstance(item.get("string_list_data"), list) else None
-                ) or item.get("value") or item.get("username") or item.get("user", {}).get("username")
-                
+                    item.get("value") or 
+                    item.get("username") or 
+                    item.get("name")
+                )
+            
+            # Method 3: Nested user object
+            if not username and "user" in item:
+                user = item["user"]
+                if isinstance(user, dict):
+                    username = (
+                        user.get("username") or 
+                        user.get("value") or
+                        user.get("name")
+                    )
+            
+            # Method 4: Extract from href/url if present
+            if not username:
+                href = item.get("href") or item.get("url") or ""
+                if href:
+                    # Extract username from Instagram URL
+                    parts = [p for p in href.split("/") if p]
+                    if "instagram.com" in href or len(parts) > 0:
+                        # Find the username part (usually after instagram.com/)
+                        for i, part in enumerate(parts):
+                            if part in ["instagram.com", "www.instagram.com"] and i + 1 < len(parts):
+                                potential_username = parts[i + 1].split("?")[0].split("#")[0]
+                                if potential_username and not potential_username.startswith("http"):
+                                    username = potential_username
+                                    break
+                        # If no instagram.com found, try last non-empty part
+                        if not username and parts:
+                            last_part = parts[-1].split("?")[0].split("#")[0]
+                            if last_part and not last_part.startswith("http"):
+                                username = last_part
+            
+            # Clean and add username
+            if username:
+                # Remove @ symbol if present
+                username = username.lstrip("@").strip().lower()
+                # Remove query parameters or fragments
+                username = username.split("?")[0].split("#")[0].rstrip("/")
                 if username:
-                    usernames.add(username.lower())
+                    usernames.add(username)
         
         return usernames
 
@@ -242,11 +340,37 @@ class InstagramUnfollowBot:
         """Compare followers and following lists to find non-followers."""
         print(f"Loading {FOLLOWERS_FILE}...")
         followers_data = self.parse_json_file(FOLLOWERS_FILE)
+        if not followers_data:
+            print(f"⚠️  Warning: {FOLLOWERS_FILE} appears to be empty or in an unsupported format")
+        else:
+            print(f"  → Parsed {len(followers_data)} items from JSON")
+        
         followers = self.extract_usernames(followers_data)
         print(f"✓ Found {len(followers)} followers")
         
-        print(f"Loading {FOLLOWING_FILE}...")
+        print(f"\nLoading {FOLLOWING_FILE}...")
         following_data = self.parse_json_file(FOLLOWING_FILE)
+        if not following_data:
+            print(f"⚠️  Warning: {FOLLOWING_FILE} appears to be empty or in an unsupported format")
+            print(f"  → This might indicate a parsing issue. Checking file structure...")
+            # Try to read raw file for debugging
+            try:
+                with open(FOLLOWING_FILE, "r", encoding="utf-8") as f:
+                    raw_data = json.load(f)
+                    print(f"  → File structure type: {type(raw_data).__name__}")
+                    if isinstance(raw_data, dict):
+                        print(f"  → Top-level keys: {list(raw_data.keys())[:10]}")
+                    elif isinstance(raw_data, list):
+                        print(f"  → List length: {len(raw_data)}")
+                        if len(raw_data) > 0:
+                            print(f"  → First item type: {type(raw_data[0]).__name__}")
+                            if isinstance(raw_data[0], dict):
+                                print(f"  → First item keys: {list(raw_data[0].keys())[:10]}")
+            except Exception as e:
+                print(f"  → Could not read file for debugging: {e}")
+        else:
+            print(f"  → Parsed {len(following_data)} items from JSON")
+        
         following = self.extract_usernames(following_data)
         print(f"✓ Found {len(following)} accounts you follow")
         
