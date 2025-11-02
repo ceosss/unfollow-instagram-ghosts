@@ -1,4 +1,39 @@
+# Cookies and session files
 instagram_cookies.pkl
+*.pkl
+
+# Instagram data files (contains personal information)
+followers_*.json
+following.json
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Logs
+*.log
+output.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials (never commit these)
+config.py
 .env
+*.key
+*.pem
