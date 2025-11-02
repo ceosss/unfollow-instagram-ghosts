@@ -106,6 +106,34 @@ The script prints:
 
 ## Troubleshooting
 
+### Chrome crashes or initialization failures
+
+If Chrome crashes during startup, try these steps:
+
+1. **Verify Chrome installation:**
+   ```bash
+   ls -la /usr/bin/chromium-browser
+   ls -la /usr/bin/chromedriver
+   ```
+
+2. **Reinstall Chrome:**
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y chromium-browser chromium-chromedriver
+   ```
+
+3. **Check system resources:**
+   ```bash
+   free -h  # Check available memory
+   df -h    # Check disk space
+   ```
+
+4. **The script will automatically:**
+   - Try system Chrome first
+   - Fallback to webdriver-manager if system Chrome fails
+   - Test Chrome stability before proceeding
+   - Provide detailed error messages
+
 ### Chrome not found
 If system Chrome isn't available, the script will fallback to webdriver-manager automatically.
 

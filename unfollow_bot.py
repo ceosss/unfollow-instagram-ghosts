@@ -57,31 +57,114 @@ class InstagramUnfollowBot:
         if HEADLESS:
             options.add_argument("--headless=new")
         
+        # Essential flags for Codespaces/container environments
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-renderer-backgrounding")
+        options.add_argument("--disable-features=TranslateUI")
+        options.add_argument("--disable-ipc-flooding-protection")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option("useAutomationExtension", False)
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
+        # Memory and stability options
+        options.add_argument("--memory-pressure-off")
+        options.add_argument("--max_old_space_size=4096")
+        
+        # Experimental options for stability
+        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+        options.add_experimental_option("useAutomationExtension", False)
+        options.add_experimental_option("detach", True)
+        
+        # Prefs to reduce crashes
+        prefs = {
+            "profile.default_content_setting_values": {
+                "notifications": 2,
+                "media_stream": 2,
+            },
+            "profile.managed_default_content_settings": {"images": 2}
+        }
+        options.add_experimental_option("prefs", prefs)
+        
         # Try to use system Chrome first (for Codespaces)
-        try:
-            if Path(CHROME_BINARY).exists():
+        driver = None
+        last_error = None
+        
+        # Try system Chrome
+        if Path(CHROME_BINARY).exists() and Path(CHROMEDRIVER_BINARY).exists():
+            try:
+                print("Attempting to use system Chrome...")
                 options.binary_location = CHROME_BINARY
-            
-            if Path(CHROMEDRIVER_BINARY).exists():
                 service = Service(CHROMEDRIVER_BINARY)
                 driver = webdriver.Chrome(service=service, options=options)
-            else:
-                # Fallback to webdriver-manager
-                service = Service(ChromeDriverManager().install())
-                driver = webdriver.Chrome(service=service, options=options)
-        except Exception as e:
-            print(f"Warning: System Chrome setup failed ({e}), using webdriver-manager...")
+                
+                # Test stability with a simple page load
+                print("  → Testing Chrome stability...")
+                driver.get("about:blank")
+                time.sleep(1)
+                
+                print("✓ Using system Chrome")
+                return driver
+            except Exception as e:
+                print(f"System Chrome failed: {e}")
+                last_error = e
+        
+        # Fallback to webdriver-manager (recreate options without binary_location)
+        try:
+            print("Falling back to webdriver-manager...")
+            # Create fresh options for webdriver-manager (don't set binary_location)
+            fallback_options = webdriver.ChromeOptions()
+            
+            if HEADLESS:
+                fallback_options.add_argument("--headless=new")
+            
+            # Add all stability arguments
+            fallback_options.add_argument("--no-sandbox")
+            fallback_options.add_argument("--disable-dev-shm-usage")
+            fallback_options.add_argument("--disable-gpu")
+            fallback_options.add_argument("--disable-software-rasterizer")
+            fallback_options.add_argument("--disable-extensions")
+            fallback_options.add_argument("--disable-background-networking")
+            fallback_options.add_argument("--disable-background-timer-throttling")
+            fallback_options.add_argument("--disable-backgrounding-occluded-windows")
+            fallback_options.add_argument("--disable-renderer-backgrounding")
+            fallback_options.add_argument("--disable-features=TranslateUI")
+            fallback_options.add_argument("--disable-ipc-flooding-protection")
+            fallback_options.add_argument("--disable-blink-features=AutomationControlled")
+            fallback_options.add_argument("--window-size=1920,1080")
+            fallback_options.add_argument("--memory-pressure-off")
+            fallback_options.add_argument("--max_old_space_size=4096")
+            fallback_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            
+            # Copy experimental options
+            fallback_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            fallback_options.add_experimental_option("useAutomationExtension", False)
+            fallback_options.add_experimental_option("detach", True)
+            fallback_options.add_experimental_option("prefs", prefs)
+            
             service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
+            driver = webdriver.Chrome(service=service, options=fallback_options)
+            
+            # Test stability with a simple page load
+            print("  → Testing Chrome stability...")
+            driver.get("about:blank")
+            time.sleep(1)
+            
+            print("✓ Using webdriver-manager Chrome")
+            return driver
+        except Exception as e:
+            print(f"webdriver-manager failed: {e}")
+            last_error = e
+        
+        # If all else fails, raise the error
+        if driver is None:
+            raise Exception(f"Failed to initialize Chrome: {last_error}")
         
         return driver
 
@@ -484,8 +567,19 @@ class InstagramUnfollowBot:
                     return
             
             # Setup and login
-            self.driver = self.setup_driver()
-            print("✓ WebDriver initialized")
+            print("\nInitializing Chrome WebDriver...")
+            try:
+                self.driver = self.setup_driver()
+                print("✓ WebDriver initialized successfully")
+            except Exception as e:
+                print(f"\n✗ Fatal error: Failed to initialize Chrome WebDriver")
+                print(f"  Error details: {e}")
+                print("\nTroubleshooting tips:")
+                print("  1. Ensure Chrome is installed: sudo apt-get install -y chromium-browser chromium-chromedriver")
+                print("  2. Try updating Chrome: sudo apt-get update && sudo apt-get upgrade chromium-browser")
+                print("  3. Check if Chrome binary exists: ls -la /usr/bin/chromium-browser")
+                print("  4. Check available memory: free -h")
+                raise
             
             try:
                 self.login()
