@@ -64,14 +64,18 @@ The script will:
 
 ### Run in Background
 
+When running in background mode, you must use the `--yes` flag to skip the confirmation prompt:
+
 ```bash
-nohup python unfollow_bot.py > output.log 2>&1 &
+nohup python unfollow_bot.py --yes > output.log 2>&1 &
 ```
 
 Monitor progress:
 ```bash
 tail -f output.log
 ```
+
+**Note**: The `--yes` flag skips the confirmation prompt and automatically proceeds with unfollowing. Use with caution!
 
 ## Configuration
 

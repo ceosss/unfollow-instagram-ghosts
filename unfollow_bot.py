@@ -10,6 +10,7 @@ import pickle
 import random
 import time
 import sys
+import argparse
 from pathlib import Path
 from typing import List, Set, Tuple
 
@@ -464,11 +465,23 @@ class InstagramUnfollowBot:
                 return
             
             print(f"\n⚠️  WARNING: This will unfollow {len(non_followers)} accounts!")
-            response = input("Continue? (yes/no): ").strip().lower()
             
-            if response != "yes":
-                print("Aborted by user.")
+            # Check if running in interactive mode
+            skip_confirmation = getattr(self, 'skip_confirmation', False)
+            is_interactive = sys.stdin.isatty()
+            
+            if skip_confirmation:
+                print("⚠️  Auto-confirming (--yes flag used)")
+            elif not is_interactive:
+                print("⚠️  Running in non-interactive mode (no terminal). Use --yes to auto-confirm.")
+                print("Aborted. To run in background, use: python unfollow_bot.py --yes")
                 return
+            else:
+                response = input("Continue? (yes/no): ").strip().lower()
+                
+                if response != "yes":
+                    print("Aborted by user.")
+                    return
             
             # Setup and login
             self.driver = self.setup_driver()
@@ -512,6 +525,15 @@ class InstagramUnfollowBot:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Instagram Unfollow Bot")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt (useful for background/non-interactive execution)"
+    )
+    args = parser.parse_args()
+    
     bot = InstagramUnfollowBot()
+    bot.skip_confirmation = args.yes
     bot.run()
 
